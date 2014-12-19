@@ -1,26 +1,82 @@
-var mainState = {
+var bootState = {
   preload: function() {
+    game.load.image('progressBar', 'assets/progressBar.png');
+  },
+
+  create: function () {
+    game.stage.backgroundColor = '#3498db';
+    game.physics.startSystem(Phaser.Physics.ARCADE);
+
+    game.state.start('load');
+  }
+}
+
+var loadState = {
+  preload: function () {
+    var loadingLabel = game.add.text(game.world.centerX, 150, 'loading...',
+                                     { font: '30px Arial', fill: '#ffffff' });
+    loadingLabel.anchor.setTo(0.5, 0.5);
+
+    var progressBar = game.add.sprite(game.world.centerX, 200, 'progressBar');
+    progressBar.anchor.setTo(0.5, 0.5);
+    game.load.setPreloadSprite(progressBar);
+
     game.load.image('player', 'assets/player.png');
     game.load.image('wallV', 'assets/wallVertical.png');
     game.load.image('wallH', 'assets/wallHorizontal.png');
     game.load.image('coin', 'assets/coin.png');
     game.load.image('enemy', 'assets/enemy.png');
+    game.load.image('background', 'assets/background.png');
   },
 
   create: function() {
-    game.stage.backgroundColor = '#3498db';
-    game.physics.startSystem(Phaser.Physics.ARCADE);
-    this.player = game.add.sprite(game.world.centerX, game.world.centerY, 'player');
-    this.player.anchor.setTo(0.5, 0.5);
+    game.state.start('menu');
+  },
+}
 
-    //gravity
-    game.physics.arcade.enable(this.player);
-    this.player.body.gravity.y = 500;
+var menuState = {
+  preload: function () {
+    game.add.image(0, 0, 'background');
 
+    var nameLabel = game.add.text(game.world.centerX, 80, 'Super Coin Box',
+                                  { font: '50px Arial', fill: '#ffffff' });
+    nameLabel.anchor.setTo(0.5, 0.5);
+
+    var scoreLabel = game.add.text(game.world.centerX, game.world.centerY,
+                                   'score: ' + game.global.score,
+                                   { font: '25px Arial', fill: '#ffffff' });
+    scoreLabel.anchor.setTo(0.5, 0.5);
+
+    var startLabel = game.add.text(game.world.centerX, game.world.height - 80,
+                                   'press the up arrow key to start',
+                                   { font: '25px Arial', fill: '#ffffff' });
+    startLabel.anchor.setTo(0.5, 0.5);
+
+    var upKey = game.input.keyboard.addKey(Phaser.Keyboard.UP);
+
+    upKey.onDown.addOnce(this.start, this);
+  },
+
+  start: function () {
+    game.state.start('play');
+  }
+}
+
+var playState = {
+  create: function() {
     //arrow keys
     this.cursor = game.input.keyboard.createCursorKeys();
 
-    this.createWorld();
+    //player
+    this.player = game.add.sprite(game.world.centerX, game.world.centerY, 'player');
+    this.player.anchor.setTo(0.5, 0.5);
+    game.physics.arcade.enable(this.player);
+    this.player.body.gravity.y = 500;
+
+    // enemies
+    this.enemies = this.game.add.group()
+    this.enemies.enableBody = true;
+    this.enemies.createMultiple(10, 'enemy');
 
     // coin
     this.coin = game.add.sprite(60, 140, 'coin');
@@ -29,13 +85,11 @@ var mainState = {
 
     // score
     this.scoreLabel = game.add.text(30, 30, 'score: 0',
-      { font: '18px Arial', fill: '#ffffff' });
-    this.score = 0;
+                                    { font: '18px Arial', fill: '#ffffff' });
+    game.global.score = 0;
 
-    // enemies
-    this.enemies = this.game.add.group()
-    this.enemies.enableBody = true;
-    this.enemies.createMultiple(10, 'enemy');
+    //everyones ready, add world and enemies
+    this.createWorld();
     game.time.events.loop(2200, this.addEnemy, this);
   },
 
@@ -65,22 +119,6 @@ var mainState = {
     if (this.cursor.up.isDown && this.player.body.touching.down) {
       this.player.body.velocity.y = -320;
     }
-    // else if (this.cursor.up.isDown && this.player.body.touching.up) {
-    //   if (this.player.body.gravity.y < 0) {
-    //     this.player.body.velocity.y = 320;
-    //   }
-    // }
-    //
-    // if (this.cursor.up.isDown && (this.player.body.touching.down || this.player.body.touching.up)) {
-    //   if (this.player.body.gravity.y > 0) {
-    //     this.player.body.gravity.y = -500;
-    //     this.player.angle = 180;
-    //   }
-    //   else {
-    //     this.player.body.gravity.y = 500;
-    //     this.player.angle = 0;
-    //   }
-    // }
   },
 
   createWorld: function () {
@@ -106,12 +144,12 @@ var mainState = {
   },
 
   playerDie: function () {
-    game.state.start('main');
+    game.state.start('menu');
   },
 
   takeCoin: function (player, coin) {
-    this.score += 5;
-    this.scoreLabel.text = 'score: ' + this.score;
+    game.global.score += 5;
+    this.scoreLabel.text = 'score: ' + game.global.score;
     this.updateCoinPosition();
   },
 
@@ -151,5 +189,14 @@ var mainState = {
 };
 
 var game = new Phaser.Game(500, 340, Phaser.AUTO, 'gameDiv');
-game.state.add('main', mainState);
-game.state.start('main');
+
+//set global score
+game.global = { score: 0 };
+
+//add states
+game.state.add('boot', bootState);
+game.state.add('load', loadState);
+game.state.add('menu', menuState);
+game.state.add('play', playState);
+
+game.state.start('boot');
