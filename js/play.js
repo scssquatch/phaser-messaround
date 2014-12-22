@@ -1,71 +1,9 @@
-var bootState = {
-  preload: function() {
-    game.load.image('progressBar', 'assets/progressBar.png');
-  },
-
-  create: function () {
-    game.stage.backgroundColor = '#3498db';
-    game.physics.startSystem(Phaser.Physics.ARCADE);
-
-    game.state.start('load');
-  }
-}
-
-var loadState = {
-  preload: function () {
-    var loadingLabel = game.add.text(game.world.centerX, 150, 'loading...',
-                                     { font: '30px Arial', fill: '#ffffff' });
-    loadingLabel.anchor.setTo(0.5, 0.5);
-
-    var progressBar = game.add.sprite(game.world.centerX, 200, 'progressBar');
-    progressBar.anchor.setTo(0.5, 0.5);
-    game.load.setPreloadSprite(progressBar);
-
-    game.load.image('player', 'assets/player.png');
-    game.load.image('wallV', 'assets/wallVertical.png');
-    game.load.image('wallH', 'assets/wallHorizontal.png');
-    game.load.image('coin', 'assets/coin.png');
-    game.load.image('enemy', 'assets/enemy.png');
-    game.load.image('background', 'assets/background.png');
-  },
-
-  create: function() {
-    game.state.start('menu');
-  },
-}
-
-var menuState = {
-  preload: function () {
-    game.add.image(0, 0, 'background');
-
-    var nameLabel = game.add.text(game.world.centerX, 80, 'Super Coin Box',
-                                  { font: '50px Arial', fill: '#ffffff' });
-    nameLabel.anchor.setTo(0.5, 0.5);
-
-    var scoreLabel = game.add.text(game.world.centerX, game.world.centerY,
-                                   'score: ' + game.global.score,
-                                   { font: '25px Arial', fill: '#ffffff' });
-    scoreLabel.anchor.setTo(0.5, 0.5);
-
-    var startLabel = game.add.text(game.world.centerX, game.world.height - 80,
-                                   'press the up arrow key to start',
-                                   { font: '25px Arial', fill: '#ffffff' });
-    startLabel.anchor.setTo(0.5, 0.5);
-
-    var upKey = game.input.keyboard.addKey(Phaser.Keyboard.UP);
-
-    upKey.onDown.addOnce(this.start, this);
-  },
-
-  start: function () {
-    game.state.start('play');
-  }
-}
-
 var playState = {
   create: function() {
     //arrow keys
     this.cursor = game.input.keyboard.createCursorKeys();
+    game.input.keyboard.addKeyCapture([Phaser.Keyboard.UP,
+          Phaser.Keyboard.DOWN, Phaser.Keyboard.LEFT, Phaser.Keyboard.RIGHT]);
 
     //player
     this.player = game.add.sprite(game.world.centerX, game.world.centerY, 'player');
@@ -88,18 +26,50 @@ var playState = {
                                     { font: '18px Arial', fill: '#ffffff' });
     game.global.score = 0;
 
+    //sound
+    this.jumpSound = game.add.audio('jump');
+    this.coinSound = game.add.audio('coin');
+    this.coinSound.volume = 0.5;
+    this.deadSound = game.add.audio('dead');
+
+    //animations
+    this.player.animations.add('right', [1, 2], 8, true);
+    this.player.animations.add('left', [3, 4], 8, true);
+
+    //emitter
+    this.emitter = game.add.emitter(0, 0, 15);
+    this.emitter.makeParticles('pixel');
+    this.emitter.setYSpeed(-150, 150);
+    this.emitter.setXSpeed(-150, 150);
+    this.emitter.gravity = 0;
+
     //everyones ready, add world and enemies
     this.createWorld();
-    game.time.events.loop(2200, this.addEnemy, this);
+    this.nextEnemy = 0;
   },
 
   update: function() {
+    //handle various collisions
     game.physics.arcade.collide(this.player, this.walls);
     game.physics.arcade.overlap(this.player, this.coin, this.takeCoin, null, this);
     game.physics.arcade.collide(this.enemies, this.walls);
     game.physics.arcade.overlap(this.player, this.enemies, this.playerDie, null, this);
+
+    //enemy creation
+    if (this.nextEnemy < game.time.now) {
+      var start = 4000, end = 1000, score = 100;
+
+      var delay = Math.max(start - (start - end) * game.global.score / score, end);
+
+      this.addEnemy();
+
+      this.nextEnemy = game.time.now + delay;
+    }
+
+    //handle input for movement
     this.movePlayer();
 
+    //check if player has left world bounds
     if (!this.player.inWorld) {
       this.playerDie();
     }
@@ -108,15 +78,19 @@ var playState = {
   movePlayer: function () {
     if (this.cursor.left.isDown) {
       this.player.body.velocity.x = -200;
+      this.player.animations.play('left');
     }
     else if (this.cursor.right.isDown) {
       this.player.body.velocity.x = 200;
+      this.player.animations.play('right');
     }
     else {
       this.player.body.velocity.x = 0;
+      this.player.frame = 0;
     }
 
     if (this.cursor.up.isDown && this.player.body.touching.down) {
+      this.jumpSound.play();
       this.player.body.velocity.y = -320;
     }
   },
@@ -144,13 +118,41 @@ var playState = {
   },
 
   playerDie: function () {
-    game.state.start('menu');
+    if (!this.player.alive) {
+      return;
+    }
+
+    this.player.kill();
+
+    this.deadSound.play();
+
+    this.emitter.x = this.player.x;
+    this.emitter.y = this.player.y;
+    this.emitter.start(true, 1000, null, 15);
+
+    game.time.events.add(1000, this.startMenu, this);
   },
 
   takeCoin: function (player, coin) {
+    //play sound
+    this.coinSound.play();
+
+    //update score
     game.global.score += 5;
     this.scoreLabel.text = 'score: ' + game.global.score;
+
+    //add new coin
     this.updateCoinPosition();
+
+    //animate coin
+    this.coin.scale.setTo(0, 0);
+    game.add.tween(this.coin.scale).
+      to({ x: 1, y: 1 }, 300).
+      start();
+    game.add.tween(this.player.scale).
+      to({ x: 1.3, y: 1.3 }, 50).
+      to({ x: 1, y: 1 }, 150).
+      start();
   },
 
   updateCoinPosition: function() {
@@ -185,18 +187,10 @@ var playState = {
     enemy.body.bounce.x = 1;
     enemy.checkWorldBounds = true;
     enemy.outOfBoundsKill = true;
+  },
+
+  startMenu: function () {
+    game.state.start('menu');
   }
+
 };
-
-var game = new Phaser.Game(500, 340, Phaser.AUTO, 'gameDiv');
-
-//set global score
-game.global = { score: 0 };
-
-//add states
-game.state.add('boot', bootState);
-game.state.add('load', loadState);
-game.state.add('menu', menuState);
-game.state.add('play', playState);
-
-game.state.start('boot');
